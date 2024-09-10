@@ -1,0 +1,8 @@
+natsort
+opencv-python==4.10.0.82
+torch==1.8.0
+torchvision==0.9.0
+transformers==4.28.0
+datasets==2.13.2
+pillow==10.3.0
+gdown
