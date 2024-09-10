@@ -6,3 +6,4 @@ transformers==4.28.0
 datasets==2.13.2
 pillow==10.3.0
 gdown
+flask
