@@ -8,7 +8,7 @@ CUDA版本：建议10.2
 
 其他依赖：见requirement.txt
 
-## 程序及目录描述
+## 程序及目录描述（详细见Detauks.docx文档）
 
 ### 文件夹目录classify_dataset用途：分类后的路径，包括手写、印刷、数字
 
