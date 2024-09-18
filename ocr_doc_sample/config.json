@@ -1,0 +1,7 @@
+{
+    "IP_ADDRESS":"172.31.221.249",    
+    "PORT":"8099",
+    "RESULT_FOLDER": "/mnt/zt/doc_result",
+    "UPLOAD_FOLDER":"/mnt/zt/doc_upload",
+    "CLASS_FOLDER": "/mnt/zt/classify_dataset"
+}

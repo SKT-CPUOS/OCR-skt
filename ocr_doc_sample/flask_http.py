@@ -2,17 +2,38 @@ from flask import Flask, jsonify, send_file, request, abort
 import os
 import json
 import shutil
-from main_ocr import trocr_recognize
+from main_ocr import trocr_recognize, rename_images_in_folders
+import threading
+import traceback 
 
 app = Flask(__name__)
 
-BASE_DIR = '/mnt/zt/ocr_doc_sample' #需要修改
+with open('config.json', 'r') as file:
+    config = json.load(file)
+
+# 从JSON中提取字段
+UPLOAD_FOLDER = config.get('UPLOAD_FOLDER')
+RESULT_FOLDER = config.get('RESULT_FOLDER')
+CLASS_FOLDER = config.get('CLASS_FOLDER')
+IP_ADDRESS = config.get("IP_ADDRESS") 
+PORT = config.get("PORT")
+# 打印结果以确认
+print("UPLOAD_FOLDER:", UPLOAD_FOLDER)
+print("RESULT_FOLDER:", RESULT_FOLDER)
+print("CLASS_FOLDER:", CLASS_FOLDER)
+print("IP_ADDRESS", IP_ADDRESS)
+print("PORT", PORT)
+
+# os.makedirs(UPLOAD_FOLDER)
+# os.makedirs(RESULT_FOLDER)
+# os.makedirs(CLASS_FOLDER)
+
 
 @app.route('/ocr_doc_sample/result/', defaults={'subpath': ''})
-@app.route('/ocr_doc_sample/result/<path:subpath>', methods=['GET', 'PUT'])
+@app.route('/ocr_doc_sample/result/<path:subpath>', methods=['GET', 'PUT']) #put是修改内容
 def handle_result_files(subpath):
-    full_path = os.path.join(BASE_DIR, 'result', subpath)
-    
+    full_path = os.path.join(RESULT_FOLDER, subpath)
+    # print('full_path', full_path)
     if request.method == 'GET':
         if os.path.isdir(full_path):
             # 列出目录中的文件和文件夹
@@ -43,10 +64,10 @@ def handle_result_files(subpath):
         else:
             abort(400, description="Unsupported file type")
 
-@app.route('/ocr_doc_sample/doc/<path:subpath>', methods=['GET'])
+@app.route('/source_doc/<path:subpath>', methods=['GET'])
 def handle_doc_files(subpath):
-    full_path = os.path.join(BASE_DIR, 'doc', subpath)
-    
+    full_path = os.path.join(UPLOAD_FOLDER, subpath)
+    print('full_path_handle_doc', full_path)
     if os.path.isfile(full_path):
         # 处理 /doc 下的文件请求
         if full_path.endswith(('.png', '.jpg', '.jpeg')):
@@ -64,16 +85,17 @@ def move_image():
         source_json_path = data.get('source_json_path')
         source_txt_path = data.get('source_txt_path')
         target_folder = data['target_folder']
-        if target_folder.startswith('ocr_doc_sample'):
-            target_folder = target_folder.replace('ocr_doc_sample/', '')
+
+        # 获取配置文件中的基础路径
+        base_dir = RESULT_FOLDER
         # 确定完整的源路径和目标路径
-        base_dir = "/mnt/zt/ocr_doc_sample"
-        full_source_image_path = os.path.join(base_dir, source_image_path.replace('/ocr_doc_sample/', ''))
-        full_target_folder = os.path.join(base_dir, target_folder)
+        full_source_image_path = source_image_path
+        full_target_folder = target_folder
 
     
         # 创建目标文件夹及其子文件夹（如果不存在）
         os.makedirs(full_target_folder, exist_ok=True)
+        print('full_target_folder', full_target_folder)
 
         # 移动图片文件
         target_image_path = os.path.join(full_target_folder, os.path.basename(full_source_image_path))
@@ -82,7 +104,7 @@ def move_image():
 
         # 移动 JSON 文件
         if source_json_path:
-            full_source_json_path = os.path.join(base_dir, source_json_path.replace('/ocr_doc_sample/', ''))
+            full_source_json_path = source_json_path
             if os.path.exists(full_source_json_path):
                 target_json_path = os.path.join(full_target_folder, os.path.basename(full_source_json_path))
                 shutil.move(full_source_json_path, target_json_path)
@@ -90,7 +112,7 @@ def move_image():
 
         # 移动 TXT 文件
         if source_txt_path:
-            full_source_txt_path = os.path.join(base_dir, source_txt_path.replace('/ocr_doc_sample/', ''))
+            full_source_txt_path = source_txt_path
             if os.path.exists(full_source_txt_path):
                 target_txt_path = os.path.join(full_target_folder, os.path.basename(full_source_txt_path))
                 shutil.move(full_source_txt_path, target_txt_path)
@@ -105,7 +127,7 @@ def move_image():
 def save_area_image(filename):
     try:
         # 构建目标路径
-        target_folder = os.path.join(BASE_DIR, 'result/dataset_addarea')
+        target_folder = os.path.join(RESULT_FOLDER, 'dataset_addarea')
         os.makedirs(target_folder, exist_ok=True)
         full_path = os.path.join(target_folder, filename)
         # print('full path', full_path)
@@ -146,7 +168,8 @@ def run_ocr():
 
 @app.route('/ocr_doc_sample/result/<folder_name>/<filename>', methods=['DELETE'])
 def delete_file(folder_name, filename):
-    file_path = os.path.join('./result/', folder_name, filename)
+    file_path = os.path.join(RESULT_FOLDER, folder_name, filename)
+    print('delete file path', file_path)
     txt_path = file_path.replace('.png', '.txt')
     json_path = file_path.replace('.png', '.json')
     if os.path.exists(file_path):
@@ -157,5 +180,41 @@ def delete_file(folder_name, filename):
     else:
         return jsonify({"error": "File not found"}), 404
 
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'message': 'No file part'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'message': 'No selected file'}), 400
+
+    # 获取文件夹路径
+    path = request.form.get('path', '')
+    save_path = os.path.join(UPLOAD_FOLDER, path)
+    os.makedirs(save_path, exist_ok=True)
+
+    # 保存文件
+    file.save(os.path.join(save_path, file.filename))
+
+    # start_rename_thread(save_path)
+    return jsonify({'message': 'File uploaded successfully'}), 200
+
+@app.route('/rename', methods=['POST'])
+def rename_files():
+    folder_path = request.form.get('folder_path')
+    print('rename folder_path is ', folder_path)
+    if not folder_path:
+        return jsonify({'message': 'No folder path provided'}), 400
+    
+    # 启动重命名线程
+    start_rename_thread(folder_path)
+
+    return jsonify({'message': f'Rename operation started for {folder_path}'}), 200
+
+def start_rename_thread(doc_folder):
+    rename_thread = threading.Thread(target=rename_images_in_folders, args=(doc_folder,))
+    rename_thread.start()
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8099, debug=True)  #端口
+    app.run(host=IP_ADDRESS, port=PORT, debug=False)  #端口
